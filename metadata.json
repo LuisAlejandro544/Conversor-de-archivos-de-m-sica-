@@ -1,0 +1,6 @@
+{
+  "name": "AudioLabs - Conversor de Audio",
+  "description": "Conversor de formatos de audio profesional con presets de calidad, recorte, procesamiento local y reproductor integrado.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,16 @@
+[package]
+name = "native_rust"
+version = "0.1.0"
+edition = "2021"
+description = "Rust native module for Android JNI integration"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+jni = "0.21.1"
+android_logger = "0.13.3"
+log = "0.4.20"
+symphonia = { version = "0.5.4", features = ["all-codecs", "all-formats"] }
+hound = "3.5.1"
+rubato = "0.14.1"
