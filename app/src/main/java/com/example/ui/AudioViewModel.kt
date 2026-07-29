@@ -145,18 +145,27 @@ class AudioViewModel(application: Application) : AndroidViewModel(application) {
             _sampleTracks.value = samples
             if (_selectedTrack.value == null && samples.isNotEmpty()) {
                 _selectedTrack.value = samples.first()
-                updateTrimEndForTrack(samples.first())
+                updateTrimAndClampConfigForTrack(samples.first())
             }
         }
     }
 
     fun selectTrack(track: SourceAudioTrack) {
         _selectedTrack.value = track
-        updateTrimEndForTrack(track)
+        updateTrimAndClampConfigForTrack(track)
     }
 
-    private fun updateTrimEndForTrack(track: SourceAudioTrack) {
-        _conversionConfig.value = _conversionConfig.value.copy(
+    private fun updateTrimAndClampConfigForTrack(track: SourceAudioTrack) {
+        val currentConfig = _conversionConfig.value
+        val maxBitrate = if (track.bitrateKbps in 1..320) track.bitrateKbps else 320
+        val maxSampleRate = if (track.sampleRateHz > 0) track.sampleRateHz else 48000
+
+        val clampedBitrate = currentConfig.bitrateKbps.coerceAtMost(maxBitrate).coerceAtLeast(64)
+        val clampedSampleRate = currentConfig.sampleRateHz.coerceAtMost(maxSampleRate).coerceAtLeast(22050)
+
+        _conversionConfig.value = currentConfig.copy(
+            bitrateKbps = clampedBitrate,
+            sampleRateHz = clampedSampleRate,
             trimStartSec = 0.0,
             trimEndSec = track.durationSeconds
         )
@@ -166,23 +175,29 @@ class AudioViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val track = converterEngine.inspectAudioUri(uri)
             _selectedTrack.value = track
-            updateTrimEndForTrack(track)
+            updateTrimAndClampConfigForTrack(track)
         }
     }
 
     fun setTargetFormat(format: AudioFormat) {
+        val track = _selectedTrack.value
+        val maxBitrate = if (track != null && track.bitrateKbps in 1..320) track.bitrateKbps else 320
         _conversionConfig.value = _conversionConfig.value.copy(
             targetFormat = format,
-            bitrateKbps = if (!format.supportsBitrate) 1536 else _conversionConfig.value.bitrateKbps
+            bitrateKbps = if (!format.supportsBitrate) 1536 else _conversionConfig.value.bitrateKbps.coerceAtMost(maxBitrate)
         )
     }
 
     fun setBitrate(bitrateKbps: Int) {
-        _conversionConfig.value = _conversionConfig.value.copy(bitrateKbps = bitrateKbps)
+        val track = _selectedTrack.value
+        val maxBitrate = if (track != null && track.bitrateKbps in 1..320) track.bitrateKbps else 320
+        _conversionConfig.value = _conversionConfig.value.copy(bitrateKbps = bitrateKbps.coerceAtMost(maxBitrate))
     }
 
     fun setSampleRate(sampleRateHz: Int) {
-        _conversionConfig.value = _conversionConfig.value.copy(sampleRateHz = sampleRateHz)
+        val track = _selectedTrack.value
+        val maxSampleRate = if (track != null && track.sampleRateHz > 0) track.sampleRateHz else 48000
+        _conversionConfig.value = _conversionConfig.value.copy(sampleRateHz = sampleRateHz.coerceAtMost(maxSampleRate))
     }
 
     fun setChannels(channels: Int) {
@@ -202,10 +217,14 @@ class AudioViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun applyPreset(preset: AudioPreset) {
+        val track = _selectedTrack.value
+        val maxBitrate = if (track != null && track.bitrateKbps in 1..320) track.bitrateKbps else 320
+        val maxSampleRate = if (track != null && track.sampleRateHz > 0) track.sampleRateHz else 48000
+
         _conversionConfig.value = _conversionConfig.value.copy(
             targetFormat = preset.targetFormat,
-            bitrateKbps = preset.bitrateKbps,
-            sampleRateHz = preset.sampleRateHz,
+            bitrateKbps = preset.bitrateKbps.coerceAtMost(maxBitrate),
+            sampleRateHz = preset.sampleRateHz.coerceAtMost(maxSampleRate),
             channels = preset.channels
         )
         _activeTab.value = 0 // Navigate to converter

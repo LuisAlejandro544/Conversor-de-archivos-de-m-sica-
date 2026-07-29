@@ -33,7 +33,8 @@ AudioLabs es una aplicación móvil nativa Android para la **conversión y proce
 ## 🔑 Glosario de Clases y Archivos Clave
 
 - `MainActivity.kt`: Punto de entrada, contenedor `Scaffold` con barra de navegación inferior y reproductor emergente.
-- `AudioViewModel.kt`: Maneja el flujo de conversión, presets, búsqueda, reproductor y estado del diálogo.
-- `AudioConverterEngine.kt`: Realiza las transformaciones de audio en segundo plano mediante Coroutines.
+- `AudioViewModel.kt`: Maneja el flujo de conversión, presets, búsqueda, reproductor, clamping automático de parámetros de calidad (limitados por la fuente) y estado del diálogo.
+- `AudioConverterEngine.kt`: Realiza las transformaciones de audio en segundo plano mediante Coroutines e inspección con `MediaMetadataRetriever`.
+- `.github/workflows/android_build.yml`: Pipeline CI/CD para compilación de APK Debug con generación dinámica de `debug.keystore`.
 - `ConvertedAudioEntity.kt`: Representación de la tabla `converted_audios` en Room.
 - `AudioFormat.kt`: Enum con todos los formatos soportados (MP3, WAV, AAC, M4A, OGG, FLAC, OPUS, AIFF) y sus metadatos.

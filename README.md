@@ -12,6 +12,10 @@
   - Frecuencia de muestreo (*Sample Rate*: 22.05 kHz, 32 kHz, 44.1 kHz, 48 kHz).
   - Configuración de canales (*Estéreo* / *Mono*).
   - Ajuste de ganancia de volumen (-6 dB a +6 dB).
+- 🛡️ **Detección y Protección Inteligente de Calidad**: Analiza automáticamente los parámetros técnicos del audio de origen (bitrate y frecuencia de muestreo) y limita las opciones superiores para evitar el re-muestreo o inflar artificialmente el tamaño del archivo.
+- ⚙️ **Integración CI/CD con GitHub Actions**:
+  - `android_build.yml`: Compila automáticamente el APK de Debug con caché de dependencias y generación dinámica de `debug.keystore`.
+  - `process_zip.yml`: Auto-extractor automático. Detecta archivos `.zip` subidos a la carpeta `/Zip/`, extrae y reemplaza los archivos modificados en el repositorio, elimina el `.zip` y realiza el commit automático.
 - ✂️ **Recorte de Audio (*Audio Trimmer*)**: Selector visual de rango con slider de precisión para cortar fragmentos de inicio y fin.
 - 🎛️ **Presets Profesionales**: Configuración con un solo toque optimizada para Música (Alta Fidelidad), Podcast/Voz, Estudio Lossless (WAV/FLAC) y Web.
 - 📁 **Gestor e Historial Local**: Base de datos **Room** para persistencia local de audios convertidos, filtrado por formato, búsqueda, marcación de favoritos y compartir.

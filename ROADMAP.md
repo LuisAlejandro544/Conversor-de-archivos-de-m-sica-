@@ -32,6 +32,8 @@ Este documento detalla el estado actual del desarrollo de **AudioLabs**, las fun
   - Integración de `symphonia` (0.5) para decodificación universal de contenedores/códecs, `hound` (3.5) para manipulación PCM/WAV y `rubato` (0.14) para procesamiento resampler/DSP.
 - [x] **JNI Bridge**:
   - `NativeBridge.kt` para la carga centralizada de librerías dinámicas `.so` (`System.loadLibrary`).
+- [x] **Protección de Calidad de Origen**: Inspección automática de parámetros del origen (`bitrateKbps` y `sampleRateHz`) y desactivación de opciones superiores para evitar sobremuestreo e inflado artificial del archivo.
+- [x] **Pipeline de Integración Continua (CI/CD)**: Flujo de GitHub Actions (`android_build.yml`) con generación de `debug.keystore` al vuelo, caché de Gradle/Rust y compilación automatizada del APK de debug.
 
 ---
 

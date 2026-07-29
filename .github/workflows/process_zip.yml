@@ -1,0 +1,44 @@
+name: Process ZIP Auto-Extractor
+
+on:
+  push:
+    paths:
+      - 'Zip/*.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip-and-update:
+    name: Unpack ZIP and Commit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract ZIP files and clean up
+        run: |
+          shopt -s nullglob
+          zip_files=(Zip/*.zip)
+          if [ ${#zip_files[@]} -eq 0 ]; then
+            echo "No .zip files found in Zip/ folder."
+            exit 0
+          fi
+
+          for zip in "${zip_files[@]}"; do
+            echo "Processing $zip..."
+            unzip -o "$zip" -d .
+            rm -f "$zip"
+          done
+
+      - name: Commit and Push Updated Files
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: apply updates from Zip upload [skip ci]"
+          commit_user_name: "GitHub Action Bot"
+          commit_user_email: "actions@github.com"
+          commit_author: "GitHub Action <actions@github.com>"

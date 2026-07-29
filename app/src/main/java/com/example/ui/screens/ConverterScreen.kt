@@ -365,6 +365,31 @@ fun ConverterScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Source audio detection info banner
+                val maxSourceBitrate = if (selectedTrack != null && selectedTrack.bitrateKbps in 1..320) selectedTrack.bitrateKbps else 320
+                val maxSourceSampleRate = if (selectedTrack != null && selectedTrack.sampleRateHz > 0) selectedTrack.sampleRateHz else 48000
+
+                if (selectedTrack != null) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "💡 Audio original: ${selectedTrack.bitrateKbps} kbps • ${selectedTrack.sampleRateHz / 1000.0} kHz. Opciones superiores deshabilitadas para evitar re-muestreo innecesario.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
                 // Bitrate Control (if applicable)
                 if (config.targetFormat.supportsBitrate) {
                     Row(
@@ -392,11 +417,18 @@ fun ConverterScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         bitrateOptions.forEach { b ->
+                            val isExceeding = b > maxSourceBitrate
                             val isSel = config.bitrateKbps == b
                             FilterChip(
                                 selected = isSel,
+                                enabled = !isExceeding,
                                 onClick = { onSetBitrate(b) },
-                                label = { Text("$b kbps", fontSize = 12.sp) },
+                                label = {
+                                    Text(
+                                        text = if (isExceeding) "$b kbps 🚫" else "$b kbps",
+                                        fontSize = 12.sp
+                                    )
+                                },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = StudioCobalt,
                                     selectedLabelColor = Color.White
@@ -434,11 +466,18 @@ fun ConverterScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     sampleRateOptions.forEach { sr ->
+                        val isExceeding = sr > maxSourceSampleRate
                         val isSel = config.sampleRateHz == sr
                         FilterChip(
                             selected = isSel,
+                            enabled = !isExceeding,
                             onClick = { onSetSampleRate(sr) },
-                            label = { Text("${sr / 1000.0} kHz", fontSize = 12.sp) },
+                            label = {
+                                Text(
+                                    text = if (isExceeding) "${sr / 1000.0} kHz 🚫" else "${sr / 1000.0} kHz",
+                                    fontSize = 12.sp
+                                )
+                            },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = StudioCobalt,
                                 selectedLabelColor = Color.White
