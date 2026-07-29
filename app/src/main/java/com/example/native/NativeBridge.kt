@@ -1,25 +1,26 @@
 package com.example.native
 
 /**
- * Bridge layer for native interoperability with C, C++, and Rust in Android.
+ * Bridge layer for native interoperability with C++ in Android.
  *
- * Loads native dynamic libraries (.so) compiled via NDK / Rust JNI tooling:
- * 1. "native_c"   -> C module (Direct system calls & OS ABI)
- * 2. "native_cpp" -> C++ module (High-performance audio processing)
- * 3. "native_rust" -> Rust module (Memory-safe concurrency & DSP)
+ * Loads native dynamic library "native_cpp" compiled via NDK for high-performance audio DSP & decoding.
  */
 object NativeBridge {
 
+    val isNativeLoaded: Boolean
+
     init {
-        try {
-            System.loadLibrary("native_c")
+        isNativeLoaded = try {
             System.loadLibrary("native_cpp")
-            System.loadLibrary("native_rust")
+            true
         } catch (e: UnsatisfiedLinkError) {
-            // Log or handle missing library loading in development environment
             e.printStackTrace()
+            false
         }
     }
 
-    // Native JNI declarations will be registered here.
+    external fun getNativeEngineInfo(): String
+    external fun processPcmGain(pcmData: ByteArray, gainDb: Float): ByteArray
+    external fun resamplePcm(pcmData: ByteArray, srcRate: Int, destRate: Int, channels: Int): ByteArray
+    external fun generateAudioBuffer(sampleRate: Int, channels: Int, durationSec: Double, freqHz: Double): ByteArray
 }

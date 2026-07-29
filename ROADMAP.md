@@ -30,8 +30,9 @@ Este documento detalla el estado actual del desarrollo de **AudioLabs**, las fun
 - [x] **Estructura Rust JNI & Crates Audio**:
   - Módulo `native_rust` en `Cargo.toml` con `jni` (0.21), `android_logger` (0.13), `log` (0.4).
   - Integración de `symphonia` (0.5) para decodificación universal de contenedores/códecs, `hound` (3.5) para manipulación PCM/WAV y `rubato` (0.14) para procesamiento resampler/DSP.
-- [x] **JNI Bridge**:
-  - `NativeBridge.kt` para la carga centralizada de librerías dinámicas `.so` (`System.loadLibrary`).
+- [x] **JNI Bridge & Motor C++ Nativo (AudioTrack + C++)**:
+  - `NativeBridge.kt` para la carga e interop JNI de la librería nativa `native_cpp`.
+  - Implementación en C++ (`native_cpp.cpp`) de funciones JNI de procesamiento de ganancia PCM, resampleo e interpolación lineal, y síntesis de buffers de audio para integración con `AudioTrack` y `AudioConverterEngine`.
 - [x] **Protección de Calidad de Origen**: Inspección automática de parámetros del origen (`bitrateKbps` y `sampleRateHz`) y desactivación de opciones superiores para evitar sobremuestreo e inflado artificial del archivo.
 - [x] **Pipeline de Integración Continua (CI/CD)**: Flujo de GitHub Actions (`android_build.yml`) con generación de `debug.keystore` al vuelo, caché de Gradle/Rust y compilación automatizada del APK de debug.
 

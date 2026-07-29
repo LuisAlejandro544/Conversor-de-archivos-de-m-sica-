@@ -21,7 +21,7 @@
 - 📁 **Gestor e Historial Local**: Base de datos **Room** para persistencia local de audios convertidos, filtrado por formato, búsqueda, marcación de favoritos y compartir.
 - 🎵 **Reproductor Integrado**: Reproducción fluida en segundo plano con control de barra de progreso (*seeking*) y tiempo en tiempo real.
 - 📊 **Inspector Técnico de Audio**: Análisis de frecuencias, tamaño original vs final, ratio de compresión y visualizador de espectro acústico.
-- ⚡ **Soporte Multilenguaje Nativo (NDK & Rust)**: Preparado para interop NDK en C, C++ y Rust.
+- ⚡ **Motor de Decodificación & DSP Nativo C++ (NDK + AudioTrack)**: Motor nativo C++17 de alto rendimiento integrado vía JNI (`native_cpp`) para procesamiento de ganancia DSP, resampleo e integración con `AudioTrack`.
 
 ---
 

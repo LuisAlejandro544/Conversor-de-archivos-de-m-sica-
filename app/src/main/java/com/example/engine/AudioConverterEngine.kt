@@ -1,23 +1,26 @@
 package com.example.engine
 
 import android.content.Context
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
 import android.net.Uri
 import com.example.model.AudioFormat
 import com.example.model.ConversionConfig
 import com.example.model.SourceAudioTrack
+import com.example.native.NativeBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
-import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 
@@ -61,7 +64,9 @@ class AudioConverterEngine(private val context: Context) {
         // 2. Podcast Voice Memo
         val voiceFile = File(samplesDir, "Studio_Voice_Podcast.m4a")
         if (!voiceFile.exists()) {
-            generateSyntheticWaveformFile(voiceFile, 32000, 1, 12.0, "VOICE")
+            val pcm = generateSamplePcm(32000, 1, 12.0, "VOICE")
+            val ok = encodePcmToM4a(pcm, 32000, 1, 128, voiceFile)
+            if (!ok) generateSyntheticWaveformFile(voiceFile, 32000, 1, 12.0, "VOICE")
         }
         samples.add(
             SourceAudioTrack(
@@ -82,7 +87,9 @@ class AudioConverterEngine(private val context: Context) {
         // 3. Piano Sonata Clip
         val pianoFile = File(samplesDir, "Classical_Piano_Clip.mp3")
         if (!pianoFile.exists()) {
-            generateSyntheticWaveformFile(pianoFile, 44100, 2, 10.0, "PIANO")
+            val pcm = generateSamplePcm(44100, 2, 10.0, "PIANO")
+            val ok = encodePcmToM4a(pcm, 44100, 2, 320, pianoFile)
+            if (!ok) generateSyntheticWaveformFile(pianoFile, 44100, 2, 10.0, "PIANO")
         }
         samples.add(
             SourceAudioTrack(
@@ -189,12 +196,12 @@ class AudioConverterEngine(private val context: Context) {
 
         // Step 1: Analizar archivo fuente
         onProgress(10, "Analizando estructura del archivo fuente...", 0, sourceTrack.sizeBytes)
-        delay(300)
+        delay(200)
 
         // Step 2: Extraer y decodificar flujo PCM
         onProgress(30, "Decodificando muestras de audio PCM...", (sourceTrack.sizeBytes * 0.3).toLong(), sourceTrack.sizeBytes)
         val sourceBytes = readSourceBytes(sourceTrack)
-        delay(400)
+        delay(300)
 
         // Step 3: Aplicar ganancia de volumen y recorte
         onProgress(50, "Procesando recorte y ajuste de ganancia...", (sourceTrack.sizeBytes * 0.5).toLong(), sourceTrack.sizeBytes)
@@ -203,7 +210,7 @@ class AudioConverterEngine(private val context: Context) {
             sourceDurationSec = sourceTrack.durationSeconds,
             config = config
         )
-        delay(300)
+        delay(200)
 
         // Step 4: Codificar en formato destino
         onProgress(75, "Codificando en formato ${config.targetFormat.displayName} (${config.bitrateKbps} kbps)...", (sourceTrack.sizeBytes * 0.75).toLong(), sourceTrack.sizeBytes)
@@ -215,7 +222,7 @@ class AudioConverterEngine(private val context: Context) {
             channels = config.channels,
             targetBitrateKbps = config.bitrateKbps
         )
-        delay(300)
+        delay(200)
 
         // Step 5: Finalizar y guardar
         onProgress(100, "Guardando archivo final...", outputFile.length(), outputFile.length())
@@ -225,18 +232,97 @@ class AudioConverterEngine(private val context: Context) {
 
     private fun readSourceBytes(sourceTrack: SourceAudioTrack): ByteArray {
         return try {
+            if (sourceTrack.uri != null) {
+                val decodedPcm = decodeToPcm(context, sourceTrack.uri)
+                if (decodedPcm.isNotEmpty()) return decodedPcm
+            }
+
             if (sourceTrack.localFilePath != null) {
                 val file = File(sourceTrack.localFilePath)
-                if (file.exists()) file.readBytes() else generateSamplePcm(44100, 2, sourceTrack.durationSeconds)
-            } else if (sourceTrack.uri != null) {
-                context.contentResolver.openInputStream(sourceTrack.uri)?.use { stream ->
-                    stream.readBytes()
-                } ?: generateSamplePcm(44100, 2, sourceTrack.durationSeconds)
-            } else {
-                generateSamplePcm(44100, 2, sourceTrack.durationSeconds)
+                if (file.exists()) {
+                    val decodedPcm = decodeToPcm(context, Uri.fromFile(file))
+                    if (decodedPcm.isNotEmpty()) return decodedPcm
+                    return file.readBytes()
+                }
             }
+            generateSamplePcm(44100, 2, sourceTrack.durationSeconds)
         } catch (_: Exception) {
             generateSamplePcm(44100, 2, sourceTrack.durationSeconds)
+        }
+    }
+
+    private fun decodeToPcm(context: Context, uri: Uri): ByteArray {
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(context, uri, null)
+            var audioTrackIndex = -1
+            var format: MediaFormat? = null
+
+            for (i in 0 until extractor.trackCount) {
+                val trackFormat = extractor.getTrackFormat(i)
+                val mime = trackFormat.getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("audio/")) {
+                    audioTrackIndex = i
+                    format = trackFormat
+                    break
+                }
+            }
+
+            if (audioTrackIndex < 0 || format == null) {
+                extractor.release()
+                return ByteArray(0)
+            }
+
+            extractor.selectTrack(audioTrackIndex)
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+            val codec = MediaCodec.createDecoderByType(mime)
+            codec.configure(format, null, null, 0)
+            codec.start()
+
+            val pcmOut = ByteArrayOutputStream()
+            val bufferInfo = MediaCodec.BufferInfo()
+            var isEOS = false
+
+            while (!isEOS) {
+                val inIndex = codec.dequeueInputBuffer(10000)
+                if (inIndex >= 0) {
+                    val inBuf = codec.getInputBuffer(inIndex)
+                    if (inBuf != null) {
+                        inBuf.clear()
+                        val sampleSize = extractor.readSampleData(inBuf, 0)
+                        if (sampleSize < 0) {
+                            codec.queueInputBuffer(inIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            isEOS = true
+                        } else {
+                            val presentationTimeUs = extractor.sampleTime
+                            codec.queueInputBuffer(inIndex, 0, sampleSize, presentationTimeUs, 0)
+                            extractor.advance()
+                        }
+                    }
+                }
+
+                var outIndex = codec.dequeueOutputBuffer(bufferInfo, 10000)
+                while (outIndex >= 0) {
+                    val outBuf = codec.getOutputBuffer(outIndex)
+                    if (outBuf != null && bufferInfo.size > 0) {
+                        val chunk = ByteArray(bufferInfo.size)
+                        outBuf.position(bufferInfo.offset)
+                        outBuf.get(chunk)
+                        pcmOut.write(chunk)
+                    }
+                    codec.releaseOutputBuffer(outIndex, false)
+                    outIndex = codec.dequeueOutputBuffer(bufferInfo, 0)
+                }
+            }
+
+            codec.stop()
+            codec.release()
+            extractor.release()
+
+            pcmOut.toByteArray()
+        } catch (e: Exception) {
+            try { extractor.release() } catch (_: Exception) {}
+            ByteArray(0)
         }
     }
 
@@ -252,17 +338,35 @@ class AudioConverterEngine(private val context: Context) {
 
         // Apply Gain (Volume adjustment)
         if (config.volumeGainDb != 0f) {
-            val factor = 10.0.pow(config.volumeGainDb.toDouble() / 20.0)
-            val buffer = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)
-            val out = ByteArray(pcm.size)
-            val outBuf = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN)
+            if (NativeBridge.isNativeLoaded) {
+                try {
+                    pcm = NativeBridge.processPcmGain(pcm, config.volumeGainDb)
+                } catch (_: Throwable) {
+                    val factor = 10.0.pow(config.volumeGainDb.toDouble() / 20.0)
+                    val buffer = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)
+                    val out = ByteArray(pcm.size)
+                    val outBuf = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN)
 
-            while (buffer.hasRemaining() && buffer.remaining() >= 2) {
-                val sample = buffer.short
-                val boosted = (sample * factor).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
-                outBuf.putShort(boosted.toShort())
+                    while (buffer.hasRemaining() && buffer.remaining() >= 2) {
+                        val sample = buffer.short
+                        val boosted = (sample * factor).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                        outBuf.putShort(boosted.toShort())
+                    }
+                    pcm = out
+                }
+            } else {
+                val factor = 10.0.pow(config.volumeGainDb.toDouble() / 20.0)
+                val buffer = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN)
+                val out = ByteArray(pcm.size)
+                val outBuf = ByteBuffer.wrap(out).order(ByteOrder.LITTLE_ENDIAN)
+
+                while (buffer.hasRemaining() && buffer.remaining() >= 2) {
+                    val sample = buffer.short
+                    val boosted = (sample * factor).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    outBuf.putShort(boosted.toShort())
+                }
+                pcm = out
             }
-            pcm = out
         }
 
         // Apply Trimming
@@ -285,27 +389,107 @@ class AudioConverterEngine(private val context: Context) {
         channels: Int,
         targetBitrateKbps: Int
     ) {
+        if (targetFormat == AudioFormat.AAC || targetFormat == AudioFormat.M4A || targetFormat == AudioFormat.MP3) {
+            val success = encodePcmToM4a(pcmData, sampleRate, channels, targetBitrateKbps, outputFile)
+            if (success && outputFile.exists() && outputFile.length() > 0) {
+                return
+            }
+        }
+
+        // Standard RIFF WAV container for uncompressed and lossless formats
         FileOutputStream(outputFile).use { fos ->
-            when (targetFormat) {
-                AudioFormat.WAV -> {
-                    // Write Standard RIFF WAV Header
-                    val wavHeader = createWavHeader(pcmData.size, sampleRate, channels, 16)
-                    fos.write(wavHeader)
-                    fos.write(pcmData)
+            val wavHeader = createWavHeader(pcmData.size, sampleRate, channels, 16)
+            fos.write(wavHeader)
+            fos.write(pcmData)
+        }
+    }
+
+    private fun encodePcmToM4a(
+        pcmData: ByteArray,
+        sampleRate: Int,
+        channels: Int,
+        bitrateKbps: Int,
+        outputFile: File
+    ): Boolean {
+        return try {
+            val mime = MediaFormat.MIMETYPE_AUDIO_AAC
+            val format = MediaFormat.createAudioFormat(mime, sampleRate, channels).apply {
+                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrateKbps * 1000)
+                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384)
+            }
+
+            val codec = MediaCodec.createEncoderByType(mime)
+            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            codec.start()
+
+            val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            var audioTrackIndex = -1
+            var muxerStarted = false
+
+            val bufferInfo = MediaCodec.BufferInfo()
+            var bytesProcessed = 0
+            val totalBytes = pcmData.size
+            var isInputDone = false
+
+            while (true) {
+                if (!isInputDone) {
+                    val inputBufIndex = codec.dequeueInputBuffer(10000)
+                    if (inputBufIndex >= 0) {
+                        val inputBuf = codec.getInputBuffer(inputBufIndex)
+                        if (inputBuf != null) {
+                            inputBuf.clear()
+                            val remaining = totalBytes - bytesProcessed
+                            val bytesToCopy = minOf(inputBuf.capacity(), remaining)
+                            if (bytesToCopy > 0) {
+                                inputBuf.put(pcmData, bytesProcessed, bytesToCopy)
+                                bytesProcessed += bytesToCopy
+                                val ptsUs = (bytesProcessed.toLong() * 1000000L) / (sampleRate * channels * 2)
+                                codec.queueInputBuffer(inputBufIndex, 0, bytesToCopy, ptsUs, 0)
+                            } else {
+                                codec.queueInputBuffer(inputBufIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                isInputDone = true
+                            }
+                        }
+                    }
                 }
-                AudioFormat.AAC, AudioFormat.M4A -> {
-                    // Write AAC frame structure with ADTS header
-                    val adtsHeader = createAdtsHeader(pcmData.size + 7, sampleRate, channels)
-                    fos.write(adtsHeader)
-                    fos.write(pcmData)
-                }
-                else -> {
-                    // MP3, FLAC, OGG, OPUS, AIFF standard container header synthesis
-                    val customHeader = createCustomAudioHeader(targetFormat, pcmData.size, sampleRate, channels, targetBitrateKbps)
-                    fos.write(customHeader)
-                    fos.write(pcmData)
+
+                val outputBufIndex = codec.dequeueOutputBuffer(bufferInfo, 10000)
+                if (outputBufIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    val newFormat = codec.outputFormat
+                    audioTrackIndex = muxer.addTrack(newFormat)
+                    muxer.start()
+                    muxerStarted = true
+                } else if (outputBufIndex >= 0) {
+                    val encodedData = codec.getOutputBuffer(outputBufIndex)
+                    if (encodedData != null && muxerStarted && (bufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                        if (bufferInfo.size != 0) {
+                            encodedData.position(bufferInfo.offset)
+                            encodedData.limit(bufferInfo.offset + bufferInfo.size)
+                            muxer.writeSampleData(audioTrackIndex, encodedData, bufferInfo)
+                        }
+                    }
+                    codec.releaseOutputBuffer(outputBufIndex, false)
+                    if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                        break
+                    }
+                } else if (outputBufIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    if (isInputDone && bytesProcessed >= totalBytes) {
+                        break
+                    }
                 }
             }
+
+            codec.stop()
+            codec.release()
+            if (muxerStarted) {
+                muxer.stop()
+                muxer.release()
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 
@@ -335,58 +519,6 @@ class AudioConverterEngine(private val context: Context) {
         buf.put("data".toByteArray())
         buf.putInt(pcmSizeBytes)
 
-        return header
-    }
-
-    private fun createAdtsHeader(frameLength: Int, sampleRate: Int, channels: Int): ByteArray {
-        val sampleRateIndex = when (sampleRate) {
-            96000 -> 0
-            88200 -> 1
-            64000 -> 2
-            48000 -> 3
-            44100 -> 4
-            32000 -> 5
-            24000 -> 6
-            22050 -> 7
-            16000 -> 8
-            12000 -> 9
-            11025 -> 10
-            8000 -> 11
-            else -> 4
-        }
-        val header = ByteArray(7)
-        header[0] = 0xFF.toByte()
-        header[1] = 0xF1.toByte() // MPEG-4, Layer 0, No CRC
-        header[2] = (((1 shl 6) or (sampleRateIndex shl 2) or (channels shr 2)).toByte())
-        header[3] = ((((channels and 3) shl 6) or (frameLength shr 11)).toByte())
-        header[4] = ((frameLength and 0x7FF) shr 3).toByte()
-        header[5] = (((frameLength and 7) shl 5) or 0x1F).toByte()
-        header[6] = 0xFC.toByte()
-        return header
-    }
-
-    private fun createCustomAudioHeader(
-        format: AudioFormat,
-        payloadSize: Int,
-        sampleRate: Int,
-        channels: Int,
-        bitrateKbps: Int
-    ): ByteArray {
-        val tag = when (format) {
-            AudioFormat.MP3 -> "ID3"
-            AudioFormat.FLAC -> "fLaC"
-            AudioFormat.OGG -> "OggS"
-            AudioFormat.OPUS -> "OpusHead"
-            AudioFormat.AIFF -> "FORM"
-            else -> "AUDI"
-        }
-        val header = ByteArray(32)
-        val buf = ByteBuffer.wrap(header).order(ByteOrder.BIG_ENDIAN)
-        buf.put(tag.toByteArray(Charsets.US_ASCII).copyOf(4))
-        buf.putInt(payloadSize)
-        buf.putInt(sampleRate)
-        buf.putShort(channels.toShort())
-        buf.putShort(bitrateKbps.toShort())
         return header
     }
 

@@ -35,32 +35,53 @@ class AudioPlayerManager(private val context: Context) {
         stop()
 
         try {
-            val file = File(filePath)
-            val uri = if (file.exists()) Uri.fromFile(file) else Uri.parse(filePath)
+            val mp = MediaPlayer()
 
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(context, uri)
-                prepare()
-                start()
+            if (filePath.startsWith("content://")) {
+                val uri = Uri.parse(filePath)
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    mp.setDataSource(pfd.fileDescriptor)
+                } ?: mp.setDataSource(context, uri)
+            } else {
+                val cleanPath = if (filePath.startsWith("file://")) filePath.substring(7) else filePath
+                val file = File(cleanPath)
+                if (file.exists()) {
+                    java.io.FileInputStream(file).use { fis ->
+                        mp.setDataSource(fis.fd)
+                    }
+                } else {
+                    mp.setDataSource(filePath)
+                }
             }
+
+            mp.prepare()
+            mp.start()
+
+            mediaPlayer = mp
 
             _playerState.value = AudioPlayerState(
                 isPlaying = true,
                 currentFilePath = filePath,
                 currentTitle = title,
                 currentPositionMs = 0,
-                durationMs = mediaPlayer?.duration ?: 0,
+                durationMs = mp.duration,
                 isLoaded = true
             )
 
-            mediaPlayer?.setOnCompletionListener {
+            mp.setOnCompletionListener {
                 _playerState.value = _playerState.value.copy(isPlaying = false, currentPositionMs = 0)
                 stopProgressTracking()
             }
 
             startProgressTracking()
         } catch (e: Exception) {
-            _playerState.value = AudioPlayerState(isLoaded = false)
+            e.printStackTrace()
+            _playerState.value = AudioPlayerState(
+                isPlaying = false,
+                currentFilePath = filePath,
+                currentTitle = title,
+                isLoaded = false
+            )
         }
     }
 
